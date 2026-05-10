@@ -1,0 +1,14 @@
+# Secretos — NUNCA subir al repo
+*.env
+.env*
+terraform.tfvars
+*.tfstate
+*.tfstate.backup
+.terraform/
+cdk.out/
+__pycache__/
+*.pyc
+node_modules/
+.DS_Store
+*.zip
+EOF
