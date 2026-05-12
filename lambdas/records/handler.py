@@ -1,17 +1,16 @@
 import json
 import os
-import psycopg2
-from psycopg2.extras import RealDictCursor
+import pg8000
 
 
 def connect_db():
-    return psycopg2.connect(
+    return pg8000.connect(
         host=os.environ["DB_HOST"],
-        dbname=os.environ["DB_NAME"],
+        database=os.environ["DB_NAME"],
         user=os.environ["DB_USER"],
         password=os.environ["DB_PASSWORD"],
         port=int(os.environ.get("DB_PORT", "5432")),
-        connect_timeout=5
+        timeout=5
     )
 
 
@@ -40,7 +39,7 @@ def lambda_handler(event, context):
 
     conn = connect_db()
 
-    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    cursor = conn.cursor()
 
     try:
         if role == "doctor":
@@ -127,7 +126,8 @@ def lambda_handler(event, context):
         query += " ORDER BY docs.uploaded_at DESC"
 
         cursor.execute(query, params)
-        rows = cursor.fetchall()
+        columns = [desc[0] for desc in cursor.description]
+        rows = [dict(zip(columns, row)) for row in cursor.fetchall()]
 
         request_context = event.get("requestContext", {})
         identity = request_context.get("identity", {})

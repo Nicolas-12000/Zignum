@@ -1,21 +1,20 @@
 import json
 import os
 import boto3
-import psycopg2
-from psycopg2.extras import RealDictCursor
+import pg8000
 import uuid
 
 s3 = boto3.client("s3")
 BUCKET = os.environ.get("DOCS_BUCKET")
 
 def connect_db():
-    return psycopg2.connect(
+    return pg8000.connect(
         host=os.environ["DB_HOST"],
-        dbname=os.environ["DB_NAME"],
+        database=os.environ["DB_NAME"],
         user=os.environ["DB_USER"],
         password=os.environ["DB_PASSWORD"],
         port=int(os.environ.get("DB_PORT", "5432")),
-        connect_timeout=5
+        timeout=5
     )
 
 def lambda_handler(event, context):
@@ -121,7 +120,7 @@ def lambda_handler(event, context):
 
         conn = connect_db()
         try:
-            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            with conn.cursor() as cursor:
                 # Check permissions
                 if role == "patient":
                     cursor.execute("""
@@ -144,6 +143,8 @@ def lambda_handler(event, context):
                 row = cursor.fetchone()
                 if not row:
                     return {"statusCode": 404, "body": json.dumps({"message": "Document not found or access denied"})}
+                columns = [desc[0] for desc in cursor.description]
+                row = dict(zip(columns, row))
 
                 download_url = s3.generate_presigned_url(
                     "get_object",
