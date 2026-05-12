@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { User, Stethoscope, ArrowLeft } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { AuthenticationDetails, CognitoUser, CognitoUserAttribute, CognitoUserPool } from 'amazon-cognito-identity-js';
+import { config } from '../config';
 import './Auth.css';
 
 const Register = () => {
@@ -18,6 +20,8 @@ const Register = () => {
     specialty: ''
   });
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   
   const { login } = useAuth();
   const navigate = useNavigate();
@@ -30,17 +34,68 @@ const Register = () => {
     e.preventDefault();
     setIsLoading(true);
     
-    // TODO: Connect to AWS Cognito sign-up
-    setTimeout(() => {
-      login({
-        id: '123',
-        name: formData.name,
-        email: formData.email,
-        role: role,
-        token: 'mock-jwt-token'
-      });
-      navigate('/dashboard');
-    }, 1500);
+    setError('');
+    setNotice('');
+
+    const poolId = role === 'doctor' ? config.cognito.doctorsPoolId : config.cognito.patientsPoolId;
+    const clientId = role === 'doctor' ? config.cognito.doctorsClientId : config.cognito.patientsClientId;
+
+    if (!poolId || !clientId) {
+      setError('Cognito no esta configurado. Revisa los IDs del User Pool.');
+      setIsLoading(false);
+      return;
+    }
+
+    const userPool = new CognitoUserPool({ UserPoolId: poolId, ClientId: clientId });
+    const attributes = [
+      new CognitoUserAttribute({ Name: 'email', Value: formData.email }),
+      new CognitoUserAttribute({ Name: 'name', Value: formData.name }),
+      new CognitoUserAttribute({ Name: 'custom:role', Value: role })
+    ];
+
+    if (role === 'doctor') {
+      attributes.push(new CognitoUserAttribute({ Name: 'custom:license', Value: formData.license }));
+      attributes.push(new CognitoUserAttribute({ Name: 'custom:specialty', Value: formData.specialty }));
+    } else {
+      attributes.push(new CognitoUserAttribute({ Name: 'custom:national_id', Value: formData.nationalId }));
+      attributes.push(new CognitoUserAttribute({ Name: 'custom:date_of_birth', Value: formData.dateOfBirth }));
+    }
+
+    userPool.signUp(formData.email, formData.password, attributes, null, (err, result) => {
+      if (err) {
+        setError(err.message || 'No se pudo registrar.');
+        setIsLoading(false);
+        return;
+      }
+
+      if (result?.userConfirmed) {
+        const authDetails = new AuthenticationDetails({
+          Username: formData.email,
+          Password: formData.password
+        });
+        const cognitoUser = new CognitoUser({ Username: formData.email, Pool: userPool });
+
+        cognitoUser.authenticateUser(authDetails, {
+          onSuccess: (session) => {
+            const idToken = session.getIdToken().getJwtToken();
+            login({
+              email: formData.email,
+              role,
+              token: idToken
+            });
+            navigate('/dashboard');
+            setIsLoading(false);
+          },
+          onFailure: (authErr) => {
+            setError(authErr?.message || 'Registro OK, pero no se pudo iniciar sesion.');
+            setIsLoading(false);
+          }
+        });
+      } else {
+        setNotice('Registro exitoso. Revisa tu correo para confirmar la cuenta.');
+        setIsLoading(false);
+      }
+    });
   };
 
   return (
@@ -75,6 +130,16 @@ const Register = () => {
         </div>
 
         <form onSubmit={handleSubmit} className="auth-form">
+          {error && (
+            <div className="auth-error">
+              {error}
+            </div>
+          )}
+          {notice && (
+            <div className="auth-notice">
+              {notice}
+            </div>
+          )}
           <div className="form-group">
             <label className="form-label">Nombre Completo</label>
             <input 

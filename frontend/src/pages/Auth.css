@@ -54,6 +54,25 @@
 
 .auth-header h2 {
   font-size: 2rem;
+.auth-error {
+  background: var(--z-danger-bg);
+  color: var(--z-danger);
+  border: 1px solid var(--z-danger);
+  padding: 0.65rem 0.85rem;
+  border-radius: 10px;
+  font-size: 0.85rem;
+  margin-bottom: 1rem;
+}
+
+.auth-notice {
+  background: rgba(0, 212, 170, 0.08);
+  color: var(--z-secondary);
+  border: 1px solid rgba(0, 212, 170, 0.35);
+  padding: 0.65rem 0.85rem;
+  border-radius: 10px;
+  font-size: 0.85rem;
+  margin-bottom: 1rem;
+}
   margin-bottom: 0.5rem;
   color: var(--z-primary);
 }
