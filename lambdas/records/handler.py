@@ -1,32 +1,16 @@
 import json
 import os
-import boto3
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
-secrets = boto3.client("secretsmanager")
-
-
-def get_db_credentials():
-
-    secret_arn = os.environ["DB_SECRET_ARN"]
-
-    response = secrets.get_secret_value(
-        SecretId=secret_arn
-    )
-
-    return json.loads(response["SecretString"])
-
 
 def connect_db():
-
-    creds = get_db_credentials()
-
     return psycopg2.connect(
         host=os.environ["DB_HOST"],
         dbname=os.environ["DB_NAME"],
-        user=creds["username"],
-        password=creds["password"],
+        user=os.environ["DB_USER"],
+        password=os.environ["DB_PASSWORD"],
+        port=int(os.environ.get("DB_PORT", "5432")),
         connect_timeout=5
     )
 

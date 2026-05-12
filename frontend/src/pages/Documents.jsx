@@ -387,6 +387,19 @@ const Documents = () => {
               <span>El archivo será cifrado automáticamente con tu CMK de KMS antes de almacenarse en S3.</span>
             </div>
 
+            {error && (
+              <div className="upload-status error">
+                {error}
+              </div>
+            )}
+
+            {isUploading && (
+              <div className="upload-status">
+                <span className="spinner" aria-hidden="true"></span>
+                Subiendo archivo a S3...
+              </div>
+            )}
+
             <button
               className="btn btn-primary w-100"
               onClick={handleUpload}
