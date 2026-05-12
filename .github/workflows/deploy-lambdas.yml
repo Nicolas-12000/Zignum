@@ -154,7 +154,7 @@ jobs:
       - name: Instalar dependencias y empaquetar
         run: |
           cd lambdas/docs
-          pip install --only-binary=:all: --platform manylinux2014_x86_64 --implementation py --target ./package -r requirements.txt --quiet
+          pip install psycopg2-binary==2.8.6 boto3==1.34.0 -t ./package --quiet
           cp *.py ./package/
           cd package && zip -r ../function.zip . -q
           echo "📦 $(du -sh ../function.zip | cut -f1)"
@@ -217,7 +217,7 @@ jobs:
       - name: Instalar dependencias y empaquetar
         run: |
           cd lambdas/records
-          pip install --only-binary=:all: --platform manylinux2014_x86_64 --implementation py --target ./package -r requirements.txt --quiet
+          pip install psycopg2-binary==2.8.6 boto3==1.34.0 -t ./package --quiet
           cp *.py ./package/
           cd package && zip -r ../function.zip . -q
           echo "📦 $(du -sh ../function.zip | cut -f1)"
