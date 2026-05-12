@@ -31,10 +31,14 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
-      - name: Instalar dependencias del frontend
+      - name: Verificar carpeta frontend
         run: |
-          cd frontend
-          npm ci --silent
+          ls -la
+          ls -la frontend
+
+      - name: Instalar dependencias del frontend
+        working-directory: frontend
+        run: npm ci --silent
 
       - name: Crear archivo de configuracion con variables de entorno
         run: |
@@ -55,9 +59,8 @@ jobs:
           fi
 
       - name: Build del frontend
-        run: |
-          cd frontend
-          npm run build
+        working-directory: frontend
+        run: npm run build
 
       - name: Subir a S3
         run: |
