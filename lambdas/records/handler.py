@@ -30,8 +30,6 @@ def log_audit(conn, action, user_sub, document_id, ip_address, user_agent):
 
 def lambda_handler(event, context):
 
-    # Deploy marker: keep to force Lambda update when needed.
-
     role = event["requestContext"]["authorizer"]["role"]
     sub = event["requestContext"]["authorizer"]["sub"]
 
