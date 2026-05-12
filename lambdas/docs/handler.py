@@ -26,6 +26,7 @@ import json
 
 def lambda_handler(event, context):
     # Placeholder response until implementation is ready.
+    # Trigger CI/CD deploy.
     return {
         "statusCode": 200,
         "body": json.dumps({"message": "Lambda docs placeholder - implement me!"}),

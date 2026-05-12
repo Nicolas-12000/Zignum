@@ -19,5 +19,6 @@ https://docs.aws.amazon.com/cognito/latest/developerguide/user-pool-lambda-pre-t
 
 
 def lambda_handler(event, context):
+  # Trigger CI/CD deploy.
     # Retornar el evento sin modificar por ahora (no rompe el flujo de Cognito)
     return event

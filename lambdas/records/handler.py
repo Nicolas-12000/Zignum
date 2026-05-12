@@ -19,6 +19,7 @@ import json
 
 
 def lambda_handler(event, context):
+    # Trigger CI/CD deploy.
     return {
         "statusCode": 200,
         "body": json.dumps({"message": "Lambda records placeholder - implement me!"}),

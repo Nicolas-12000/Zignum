@@ -23,4 +23,5 @@ import json
 def lambda_handler(event, context):
     # TODO: Implementar la validacion del JWT
     # Por ahora retorna un error para probar el pipeline
+   # Trigger CI/CD deploy.
     raise Exception("Unauthorized")

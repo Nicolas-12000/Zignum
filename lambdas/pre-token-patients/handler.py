@@ -7,4 +7,5 @@ Similar al de medicos pero agrega:
 
 
 def lambda_handler(event, context):
+    # Trigger CI/CD deploy.
     return event
