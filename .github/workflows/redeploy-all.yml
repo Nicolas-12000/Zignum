@@ -7,7 +7,9 @@ jobs:
   redeploy-lambdas:
     name: Redeploy Lambdas
     uses: ./.github/workflows/deploy-lambdas.yml
+    secrets: inherit
 
   redeploy-frontend:
     name: Redeploy Frontend
     uses: ./.github/workflows/deploy-frontend.yml
+    secrets: inherit
