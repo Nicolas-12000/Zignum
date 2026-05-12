@@ -16,10 +16,11 @@ Nota: los despliegues de Lambda en main se ejecutan via GitHub Actions.
 
 | Capa | Tecnología |
 |------|-----------|
+| Frontend | React + Vite (SPA) alojado en S3 |
 | Auth | AWS Cognito (2 User Pools independientes) + Lambda Authorizer |
 | API | API Gateway REST + JWT custom claims |
 | Cómputo | AWS Lambda — Python 3.11 |
-| Base de datos | RDS MySQL 8.0 en subred privada (VPC) |
+| Base de datos | RDS PostgreSQL en subred privada (VPC) |
 | Almacenamiento | S3 con SSE-KMS (CMK gestionada por el cliente) |
 | CDN | CloudFront con dos cache behaviors diferenciados |
 | Secretos | GitHub Encrypted Secrets → variables de entorno Lambda |
@@ -61,7 +62,7 @@ Nota: los despliegues de Lambda en main se ejecutan via GitHub Actions.
           │              VPC Privada              │
           │                                      │
           │   ┌───────────┐    ┌──────────────┐  │
-          │   │    S3     │    │  RDS MySQL   │  │
+          │   │    S3     │    │ RDS Postgres │  │
           │   │ SSE-KMS   │    │  subred      │  │
           │   │ (CMK)     │    │  privada     │  │
           │   └─────┬─────┘    └──────────────┘  │
@@ -80,7 +81,7 @@ Nota: los despliegues de Lambda en main se ejecutan via GitHub Actions.
 
 **Pre Token Generation Lambda Trigger en lugar de claims estáticos.** Los custom claims se inyectan dinámicamente desde RDS antes de que Cognito firme el JWT. Esto permite revocar permisos en tiempo real (un médico con licencia suspendida recibe `custom:license_active: false` en su siguiente login sin necesidad de invalidar tokens existentes).
 
-**CMK de KMS con deny explícito por Principal.** La Key Policy deniega `kms:Decrypt` y `kms:GenerateDataKey` a cualquier principal que no sea `ZignumLambdaDocsRole`, incluyendo el rol de administrador de la consola. Esto hace que la restricción sea demostrable: un intento de descarga directa desde la consola S3 retorna `AccessDenied` desde KMS, no desde S3. Ver evidencia en [`docs/images/kms-deny-demo.png`](docs/images/kms-deny-demo.png).
+**CMK de KMS con deny explícito por Principal.** La Key Policy deniega `kms:Decrypt` y `kms:GenerateDataKey` a cualquier principal que no sea `ZignumLambdaDocsRole`, incluyendo el rol de administrador de la consola. Esto hace que la restricción sea demostrable: un intento de descarga directa desde la consola S3 retorna `AccessDenied` desde KMS, no desde S3. Ver evidencia en [`docs/images/Access-Denied.png`](docs/images/Access-Denied.png).
 
 **VPC Endpoints en lugar de NAT Gateway.** Las Lambdas en VPC acceden a S3 vía Gateway Endpoint (gratis) y a KMS vía Interface Endpoint. Esto elimina el costo del NAT Gateway (~$32/mes) y el tráfico hacia esos servicios nunca sale de la red de AWS.
 
@@ -142,8 +143,20 @@ zignum/
 
 - AWS CLI v2 configurado con un usuario IAM (no root)
 - Python 3.11
-- Node.js 20
+- Node.js 20+ (Requerido para compilar Vite/React)
 - Cuenta AWS con Free Tier activo
+
+### Desarrollo Local (Frontend)
+
+Para correr la interfaz de usuario en tu máquina:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Esto levantará el servidor de Vite en modo de desarrollo. Las variables de entorno para conectarse con AWS deben configurarse copiando `.env.example` a `.env.local` (este archivo no se sube a Git).
 
 ### GitHub Secrets requeridos
 
@@ -194,14 +207,14 @@ Las variables de entorno en Lambda están cifradas en reposo por AWS usando la c
 En el código Python de cada Lambda, la conexión a RDS se hace con:
 
 ```python
-import os, pymysql
+import os, psycopg2
 
-connection = pymysql.connect(
+connection = psycopg2.connect(
     host=os.environ['DB_HOST'],
     user=os.environ['DB_USER'],
     password=os.environ['DB_PASSWORD'],
-    database=os.environ['DB_NAME'],
-    port=int(os.environ.get('DB_PORT', 3306)),
+    dbname=os.environ['DB_NAME'],
+    port=int(os.environ.get('DB_PORT', 5432)),
     connect_timeout=5
 )
 ```
@@ -270,7 +283,7 @@ La CMK tiene tres statements:
 2. **`ZignumLambdaDocsRole`** — único principal autorizado para `GenerateDataKey` y `Decrypt`.
 3. **Deny explícito** — cualquier otro principal que intente `Decrypt` o `GenerateDataKey` recibe denegación, incluyendo el rol de administrador de la consola. Este Deny toma precedencia sobre cualquier política IAM adjunta al principal.
 
-Ver demostración del deny en [`docs/images/kms-deny-demo.png`](docs/images/kms-deny-demo.png).
+Ver demostración del deny en [`docs/images/Access-Denied.png`](docs/images/Access-Denied.png).
 
 ### Cognito — Custom claims en el JWT
 
@@ -324,11 +337,11 @@ audit_log   (id, action, user_sub, document_id, ip_address, timestamp)
 
 | Requisito | Evidencia |
 |-----------|-----------|
-| JWT con custom claims | [`docs/images/jwt-claims-demo.png`](docs/images/jwt-claims-demo.png) |
-| KMS deny desde consola | [`docs/images/kms-deny-demo.png`](docs/images/kms-deny-demo.png) |
-| CloudFront behaviors | [`docs/images/cloudfront-behaviors.png`](docs/images/cloudfront-behaviors.png) |
-| CloudWatch dashboard | [`docs/images/cloudwatch-dashboard.png`](docs/images/cloudwatch-dashboard.png) |
-| Restricción geográfica | [`docs/images/geo-restriction.png`](docs/images/geo-restriction.png) |
+| JWT con custom claims | <a href="docs/images/jwt-claims-demo.png"><img src="docs/images/jwt-claims-demo.png" width="250" alt="JWT Claims"/></a> |
+| KMS deny desde consola | <a href="docs/images/Access-Denied.png"><img src="docs/images/Access-Denied.png" width="250" alt="KMS Deny"/></a> |
+| CloudFront behaviors | *(Pendiente: Agregar docs/images/cloudfront-behaviors.png)* |
+| CloudWatch dashboard | *(Pendiente: Agregar docs/images/cloudwatch-dashboard.png)* |
+| Restricción geográfica | *(Pendiente: Agregar docs/images/geo-restriction.png)* |
 
 ---
 

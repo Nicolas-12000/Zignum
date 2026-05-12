@@ -1,0 +1,89 @@
+name: Deploy Frontend
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'frontend/**'
+  workflow_dispatch:
+
+jobs:
+  deploy-frontend:
+    name: Build y deploy del frontend a S3 + CloudFront
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout codigo
+        uses: actions/checkout@v4
+
+      - name: Configurar credenciales AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Instalar dependencias del frontend
+        run: |
+          cd frontend
+          npm ci --silent
+
+      - name: Crear archivo de configuracion con variables de entorno
+        run: |
+          cat > frontend/.env.production << EOF
+          VITE_API_URL=${{ secrets.API_GATEWAY_URL }}
+          VITE_COGNITO_DOCTORS_POOL_ID=${{ secrets.COGNITO_DOCTORS_POOL_ID }}
+          VITE_COGNITO_DOCTORS_CLIENT_ID=${{ secrets.COGNITO_DOCTORS_CLIENT_ID }}
+          VITE_COGNITO_PATIENTS_POOL_ID=${{ secrets.COGNITO_PATIENTS_POOL_ID }}
+          VITE_COGNITO_PATIENTS_CLIENT_ID=${{ secrets.COGNITO_PATIENTS_CLIENT_ID }}
+          VITE_AWS_REGION=${{ secrets.AWS_REGION }}
+          EOF
+
+      - name: Build del frontend
+        run: |
+          cd frontend
+          npm run build
+
+      - name: Subir a S3
+        run: |
+          aws s3 sync frontend/dist/assets/ \
+            s3://${{ secrets.FRONTEND_BUCKET }}/assets/ \
+            --cache-control "public, max-age=31536000, immutable" \
+            --delete \
+            --quiet
+
+          aws s3 sync frontend/dist/ \
+            s3://${{ secrets.FRONTEND_BUCKET }}/ \
+            --exclude "assets/*" \
+            --cache-control "public, max-age=0, must-revalidate" \
+            --delete \
+            --quiet
+
+      - name: Invalidar cache de CloudFront
+        run: |
+          INVALIDATION_ID=$(aws cloudfront create-invalidation \
+            --distribution-id ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }} \
+            --paths "/*" \
+            --query 'Invalidation.Id' \
+            --output text)
+
+          aws cloudfront wait invalidation-completed \
+            --distribution-id ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }} \
+            --id "$INVALIDATION_ID"
+
+      - name: Resumen del deploy
+        run: |
+          echo "## Frontend desplegado" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Parametro | Valor |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| URL | https://${{ secrets.CLOUDFRONT_URL }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Bucket S3 | ${{ secrets.FRONTEND_BUCKET }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Cache invalidada | OK |" >> $GITHUB_STEP_SUMMARY

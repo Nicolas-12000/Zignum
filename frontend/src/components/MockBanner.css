@@ -1,0 +1,26 @@
+.mock-banner {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 1rem;
+  background: linear-gradient(135deg, rgba(254, 202, 87, 0.15), rgba(254, 202, 87, 0.08));
+  border: 1px dashed rgba(254, 202, 87, 0.5);
+  border-radius: 9999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #C4890D;
+  text-transform: uppercase;
+  user-select: none;
+}
+
+.mock-separator {
+  opacity: 0.4;
+}
+
+.mock-label {
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: 0.75rem;
+}

@@ -176,10 +176,9 @@ jobs:
               DB_NAME=${{ secrets.DB_NAME }},
               DB_USER=${{ secrets.DB_USER }},
               DB_PASSWORD=${{ secrets.DB_PASSWORD }},
-              DB_PORT=3306,
+              DB_PORT=5432,
               DOCS_BUCKET=${{ secrets.DOCS_BUCKET }},
-              KMS_KEY_ARN=${{ secrets.KMS_KEY_ARN }},
-              AWS_DEPLOY_REGION=${{ secrets.AWS_REGION }}
+              KMS_KEY_ARN=${{ secrets.KMS_KEY_ARN }}
             }"
           aws lambda wait function-updated \
             --function-name zignum-docs
@@ -237,8 +236,7 @@ jobs:
               DB_NAME=${{ secrets.DB_NAME }},
               DB_USER=${{ secrets.DB_USER }},
               DB_PASSWORD=${{ secrets.DB_PASSWORD }},
-              DB_PORT=3306,
-              AWS_DEPLOY_REGION=${{ secrets.AWS_REGION }}
+              DB_PORT=5432
             }"
           aws lambda wait function-updated \
             --function-name zignum-records
@@ -297,7 +295,7 @@ jobs:
               DB_NAME=${{ secrets.DB_NAME }},
               DB_USER=${{ secrets.DB_USER }},
               DB_PASSWORD=${{ secrets.DB_PASSWORD }},
-              DB_PORT=3306
+              DB_PORT=5432
             }"
           aws lambda wait function-updated \
             --function-name zignum-pre-token-doctors
@@ -356,7 +354,7 @@ jobs:
               DB_NAME=${{ secrets.DB_NAME }},
               DB_USER=${{ secrets.DB_USER }},
               DB_PASSWORD=${{ secrets.DB_PASSWORD }},
-              DB_PORT=3306
+              DB_PORT=5432
             }"
           aws lambda wait function-updated \
             --function-name zignum-pre-token-patients

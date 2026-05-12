@@ -1,0 +1,96 @@
+name: AWS Cost Report
+
+on:
+  schedule:
+    - cron: '0 13 * * 1'
+  workflow_dispatch:
+
+jobs:
+  reporte-costos:
+    name: Verificar costos y uso de Free Tier
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Configurar credenciales AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Costo del mes actual por servicio
+        run: |
+          START=$(date -d "$(date +%Y-%m-01)" +%Y-%m-%d)
+          END=$(date +%Y-%m-%d)
+
+          TOTAL=$(aws ce get-cost-and-usage \
+            --time-period Start=$START,End=$END \
+            --granularity MONTHLY \
+            --metrics "UnblendedCost" \
+            --query 'ResultsByTime[0].Total.UnblendedCost.Amount' \
+            --output text 2>/dev/null || echo "0.00")
+
+          echo "Costo total del mes: $TOTAL USD"
+
+          aws ce get-cost-and-usage \
+            --time-period Start=$START,End=$END \
+            --granularity MONTHLY \
+            --metrics "UnblendedCost" \
+            --group-by Type=DIMENSION,Key=SERVICE \
+            --query 'ResultsByTime[0].Groups[?Metrics.UnblendedCost.Amount>`0`].[Keys[0],Metrics.UnblendedCost.Amount]' \
+            --output table 2>/dev/null || echo "No se pudo obtener el desglose"
+
+      - name: Estado de recursos con costo fijo
+        run: |
+          KMS_STATUS=$(aws kms describe-key \
+            --key-id alias/zignum-docs-cmk \
+            --query 'KeyMetadata.KeyState' \
+            --output text 2>/dev/null || echo "NotFound")
+          echo "KMS CMK (zignum-docs-cmk): $KMS_STATUS"
+
+          RDS_STATUS=$(aws rds describe-db-instances \
+            --db-instance-identifier zignum-db \
+            --query 'DBInstances[0].DBInstanceStatus' \
+            --output text 2>/dev/null || echo "NotFound")
+          echo "RDS (zignum-db): $RDS_STATUS"
+
+          echo "S3 almacenamiento usado:"
+          for BUCKET in "${{ secrets.DOCS_BUCKET }}" "${{ secrets.FRONTEND_BUCKET }}"; do
+            if [ -n "$BUCKET" ]; then
+              RESULT=$(aws s3 ls s3://$BUCKET --recursive --summarize 2>/dev/null \
+                | grep "Total Size" | awk '{print $3}')
+              SIZE=${RESULT:-0}
+              MB=$(echo "scale=2; $SIZE/1048576" | bc 2>/dev/null || echo "N/A")
+              echo "$BUCKET: ${MB} MB"
+            fi
+          done
+
+          echo "Variables de entorno en Lambdas:"
+          for LAMBDA in zignum-docs zignum-records zignum-pre-token-doctors zignum-pre-token-patients; do
+            DB_HOST_SET=$(aws lambda get-function-configuration \
+              --function-name $LAMBDA \
+              --query 'Environment.Variables.DB_HOST' \
+              --output text 2>/dev/null || echo "None")
+            if [ "$DB_HOST_SET" != "None" ] && [ -n "$DB_HOST_SET" ]; then
+              echo "$LAMBDA: DB_HOST configurado"
+            else
+              echo "$LAMBDA: DB_HOST no encontrado"
+            fi
+          done
+
+      - name: Escribir reporte en el resumen
+        run: |
+          START=$(date -d "$(date +%Y-%m-01)" +%Y-%m-%d)
+          END=$(date +%Y-%m-%d)
+
+          TOTAL=$(aws ce get-cost-and-usage \
+            --time-period Start=$START,End=$END \
+            --granularity MONTHLY \
+            --metrics "UnblendedCost" \
+            --query 'ResultsByTime[0].Total.UnblendedCost.Amount' \
+            --output text 2>/dev/null || echo "0.00")
+
+          echo "## Reporte de costos - Zignum - $(date +%Y-%m-%d)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Periodo:** $START -> $END" >> $GITHUB_STEP_SUMMARY
+          echo "**Total del mes:** $TOTAL USD" >> $GITHUB_STEP_SUMMARY

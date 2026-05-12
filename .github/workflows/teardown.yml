@@ -17,7 +17,7 @@ jobs:
       - name: Stop RDS instance
         run: |
           aws rds stop-db-instance \
-            --db-instance-identifier telemedicina-db \
+            --db-instance-identifier zignum-db \
             --region ${{ secrets.AWS_REGION }}
           echo "✅ RDS detenida. Se reiniciará automáticamente en 7 días."
           echo "⚠️ Para evitar que se reinicie, deténla de nuevo antes de 7 días."

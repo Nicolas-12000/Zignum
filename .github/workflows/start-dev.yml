@@ -1,0 +1,156 @@
+name: Start Dev Environment
+
+on:
+  workflow_dispatch:
+
+jobs:
+  encender-rds:
+    name: Encender RDS
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Configurar credenciales AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Verificar estado actual de RDS
+        id: check-rds
+        run: |
+          STATUS=$(aws rds describe-db-instances \
+            --db-instance-identifier zignum-db \
+            --query 'DBInstances[0].DBInstanceStatus' \
+            --output text 2>/dev/null || echo "not-found")
+
+          echo "Estado actual de RDS: $STATUS"
+          echo "status=$STATUS" >> $GITHUB_OUTPUT
+
+      - name: Iniciar RDS
+        if: steps.check-rds.outputs.status == 'stopped'
+        run: |
+          aws rds start-db-instance \
+            --db-instance-identifier zignum-db \
+            --region ${{ secrets.AWS_REGION }}
+
+          aws rds wait db-instance-available \
+            --db-instance-identifier zignum-db \
+            --region ${{ secrets.AWS_REGION }}
+
+      - name: RDS ya estaba encendida
+        if: steps.check-rds.outputs.status == 'available'
+        run: echo "RDS ya estaba en estado 'available'."
+
+      - name: Obtener endpoint de RDS
+        if: |
+          steps.check-rds.outputs.status == 'stopped' ||
+          steps.check-rds.outputs.status == 'available'
+        run: |
+          ENDPOINT=$(aws rds describe-db-instances \
+            --db-instance-identifier zignum-db \
+            --query 'DBInstances[0].Endpoint.Address' \
+            --output text)
+
+          echo "Endpoint de RDS: $ENDPOINT"
+
+  reactivar-lambdas:
+    name: Reactivar Lambdas
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Configurar credenciales AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Restaurar concurrencia de Lambdas
+        run: |
+          LAMBDAS=(
+            "zignum-authorizer"
+            "zignum-docs"
+            "zignum-records"
+            "zignum-pre-token-doctors"
+            "zignum-pre-token-patients"
+          )
+
+          for LAMBDA in "${LAMBDAS[@]}"; do
+            echo "Reactivando $LAMBDA..."
+            aws lambda put-function-concurrency \
+              --function-name "$LAMBDA" \
+              --reserved-concurrent-executions 10 \
+              --region ${{ secrets.AWS_REGION }} 2>/dev/null && \
+              echo "OK" || \
+              echo "No encontrada, omitiendo"
+          done
+
+  verificar-servicios:
+    name: Verificar estado de servicios
+    runs-on: ubuntu-latest
+    needs:
+      - encender-rds
+      - reactivar-lambdas
+
+    steps:
+      - name: Configurar credenciales AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Verificar estado de Lambdas
+        run: |
+          LAMBDAS=(
+            "zignum-authorizer"
+            "zignum-docs"
+            "zignum-records"
+            "zignum-pre-token-doctors"
+            "zignum-pre-token-patients"
+          )
+
+          echo "## Estado de Lambdas" >> $GITHUB_STEP_SUMMARY
+          echo "| Lambda | Concurrencia | Runtime | Ultima modificacion |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------------|---------|---------------------|" >> $GITHUB_STEP_SUMMARY
+
+          for LAMBDA in "${LAMBDAS[@]}"; do
+            INFO=$(aws lambda get-function-concurrency \
+              --function-name "$LAMBDA" \
+              --region ${{ secrets.AWS_REGION }} 2>/dev/null)
+
+            CONCURRENCY=$(echo "$INFO" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('ReservedConcurrentExecutions','N/A'))" 2>/dev/null || echo "N/A")
+
+            FINFO=$(aws lambda get-function-configuration \
+              --function-name "$LAMBDA" \
+              --region ${{ secrets.AWS_REGION }} \
+              --query '{Runtime:Runtime,LastModified:LastModified}' \
+              --output json 2>/dev/null || echo '{"Runtime":"N/A","LastModified":"N/A"}')
+
+            RUNTIME=$(echo "$FINFO" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['Runtime'])" 2>/dev/null || echo "N/A")
+            MODIFIED=$(echo "$FINFO" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['LastModified'][:10])" 2>/dev/null || echo "N/A")
+
+            echo "| $LAMBDA | $CONCURRENCY | $RUNTIME | $MODIFIED |" >> $GITHUB_STEP_SUMMARY
+          done
+
+      - name: Verificar estado de RDS
+        run: |
+          STATUS=$(aws rds describe-db-instances \
+            --db-instance-identifier zignum-db \
+            --query 'DBInstances[0].DBInstanceStatus' \
+            --output text 2>/dev/null || echo "not-found")
+
+          ENDPOINT=$(aws rds describe-db-instances \
+            --db-instance-identifier zignum-db \
+            --query 'DBInstances[0].Endpoint.Address' \
+            --output text 2>/dev/null || echo "N/A")
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Estado de RDS" >> $GITHUB_STEP_SUMMARY
+          echo "| Parametro | Valor |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Estado | $STATUS |" >> $GITHUB_STEP_SUMMARY
+          echo "| Endpoint | $ENDPOINT |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Entorno listo" >> $GITHUB_STEP_SUMMARY

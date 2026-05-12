@@ -1,0 +1,139 @@
+name: Stop Dev Environment
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmar:
+        description: "Escribe APAGAR para confirmar"
+        required: true
+        default: ""
+      eliminar_rds:
+        description: "Eliminar RDS completamente? (true = borra todos los datos)"
+        required: true
+        type: choice
+        options:
+          - "false"
+          - "true"
+        default: "false"
+
+jobs:
+  validar-confirmacion:
+    name: Validar confirmacion
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Verificar confirmacion
+        run: |
+          if [ "${{ github.event.inputs.confirmar }}" != "APAGAR" ]; then
+            echo "Debes escribir exactamente APAGAR para confirmar."
+            echo "Escribiste: '${{ github.event.inputs.confirmar }}'"
+            exit 1
+          fi
+          echo "Confirmacion valida"
+
+  apagar-rds:
+    name: Detener o eliminar RDS
+    runs-on: ubuntu-latest
+    needs: validar-confirmacion
+
+    steps:
+      - name: Configurar credenciales AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Verificar estado actual de RDS
+        id: check-rds
+        run: |
+          STATUS=$(aws rds describe-db-instances \
+            --db-instance-identifier zignum-db \
+            --query 'DBInstances[0].DBInstanceStatus' \
+            --output text 2>/dev/null || echo "not-found")
+
+          echo "Estado actual de RDS: $STATUS"
+          echo "status=$STATUS" >> $GITHUB_OUTPUT
+
+      - name: Detener RDS (pausar)
+        if: |
+          steps.check-rds.outputs.status == 'available' &&
+          github.event.inputs.eliminar_rds == 'false'
+        run: |
+          echo "Deteniendo instancia RDS zignum-db..."
+          aws rds stop-db-instance \
+            --db-instance-identifier zignum-db \
+            --region ${{ secrets.AWS_REGION }}
+
+          echo "RDS detenida (datos intactos)."
+
+      - name: RDS ya estaba detenida
+        if: steps.check-rds.outputs.status == 'stopped'
+        run: echo "RDS ya estaba en estado 'stopped'."
+
+      - name: Eliminar RDS permanentemente
+        if: |
+          github.event.inputs.eliminar_rds == 'true' &&
+          steps.check-rds.outputs.status != 'not-found'
+        run: |
+          echo "ELIMINANDO RDS permanentemente..."
+          aws rds delete-db-instance \
+            --db-instance-identifier zignum-db \
+            --skip-final-snapshot \
+            --delete-automated-backups \
+            --region ${{ secrets.AWS_REGION }}
+
+      - name: RDS no encontrada
+        if: steps.check-rds.outputs.status == 'not-found'
+        run: echo "No se encontro la instancia zignum-db."
+
+  suspender-lambdas:
+    name: Poner Lambdas en concurrencia 0
+    runs-on: ubuntu-latest
+    needs: validar-confirmacion
+
+    steps:
+      - name: Configurar credenciales AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Poner reserved concurrency = 0
+        run: |
+          LAMBDAS=(
+            "zignum-authorizer"
+            "zignum-docs"
+            "zignum-records"
+            "zignum-pre-token-doctors"
+            "zignum-pre-token-patients"
+          )
+
+          for LAMBDA in "${LAMBDAS[@]}"; do
+            echo "Suspendiendo $LAMBDA..."
+            aws lambda put-function-concurrency \
+              --function-name "$LAMBDA" \
+              --reserved-concurrent-executions 0 \
+              --region ${{ secrets.AWS_REGION }} 2>/dev/null && \
+              echo "OK" || \
+              echo "No encontrada, omitiendo"
+          done
+
+  resumen-apagado:
+    name: Resumen del apagado
+    runs-on: ubuntu-latest
+    needs:
+      - apagar-rds
+      - suspender-lambdas
+    if: always()
+
+    steps:
+      - name: Mostrar resumen
+        run: |
+          echo "## Entorno de desarrollo apagado" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Accion | Estado |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| RDS | ${{ needs.apagar-rds.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Lambdas suspendidas | ${{ needs.suspender-lambdas.result }} |" >> $GITHUB_STEP_SUMMARY
