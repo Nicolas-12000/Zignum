@@ -1,0 +1,13 @@
+name: Redeploy All
+
+on:
+  workflow_dispatch:
+
+jobs:
+  redeploy-lambdas:
+    name: Redeploy Lambdas
+    uses: ./.github/workflows/deploy-lambdas.yml
+
+  redeploy-frontend:
+    name: Redeploy Frontend
+    uses: ./.github/workflows/deploy-frontend.yml
