@@ -1,50 +1,392 @@
-name: Deploy Lambdas
+name: 🚀 Deploy Lambdas
 
 on:
   push:
     branches: [main]
     paths:
       - 'lambdas/**'
+  workflow_dispatch:
+
+env:
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  PYTHON_VERSION: '3.11'
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Gestión de credenciales RDS — 100% Free Tier
+#
+# No se usa AWS Secrets Manager (cuesta $0.40/secreto/mes).
+# Las credenciales se almacenan en GitHub Encrypted Secrets y se inyectan
+# como variables de entorno en cada Lambda vía update-function-configuration.
+#
+# GitHub Secrets requeridos:
+#   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION
+#   DB_HOST      → endpoint de RDS (no cambia al detener/iniciar la instancia)
+#   DB_NAME      → nombre de la base de datos  (zignum)
+#   DB_USER      → usuario master de RDS       (admin)
+#   DB_PASSWORD  → contraseña master de RDS
+#   DOCS_BUCKET  → nombre del bucket S3 de documentos médicos
+#   KMS_KEY_ARN  → ARN de la CMK
+#   COGNITO_DOCTORS_POOL_ID
+#   COGNITO_PATIENTS_POOL_ID
+# ─────────────────────────────────────────────────────────────────────────────
 
 jobs:
-  deploy:
+  # ──────────────────────────────────────────────────────────────
+  # Detecta cuáles Lambdas cambiaron — solo despliega las afectadas
+  # ──────────────────────────────────────────────────────────────
+  detect-changes:
+    name: Detectar Lambdas modificadas
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        lambda:
-          - authorizer
-          - docs
-          - records
-          - pre-token-doctors
-          - pre-token-patients
+    outputs:
+      authorizer:         ${{ steps.filter.outputs.authorizer }}
+      docs:               ${{ steps.filter.outputs.docs }}
+      records:            ${{ steps.filter.outputs.records }}
+      pre-token-doctors:  ${{ steps.filter.outputs.pre-token-doctors }}
+      pre-token-patients: ${{ steps.filter.outputs.pre-token-patients }}
 
     steps:
-      - name: Checkout code
+      - name: Checkout código
         uses: actions/checkout@v4
 
-      - name: Configure AWS credentials
+      - name: Detectar cambios por carpeta
+        uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            authorizer:
+              - 'lambdas/authorizer/**'
+            docs:
+              - 'lambdas/docs/**'
+            records:
+              - 'lambdas/records/**'
+            pre-token-doctors:
+              - 'lambdas/pre-token-doctors/**'
+            pre-token-patients:
+              - 'lambdas/pre-token-patients/**'
+
+  # ──────────────────────────────────────────────────────────────
+  # Authorizer — valida JWT. Solo necesita los Pool IDs de Cognito.
+  # Sin acceso a RDS ni S3.
+  # ──────────────────────────────────────────────────────────────
+  deploy-authorizer:
+    name: Deploy → zignum-authorizer
+    needs: detect-changes
+    if: needs.detect-changes.outputs.authorizer == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Configurar credenciales AWS
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-region:            ${{ secrets.AWS_REGION }}
 
-      - name: Set up Python
+      - name: Configurar Python ${{ env.PYTHON_VERSION }}
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: lambdas/authorizer/requirements.txt
 
-      - name: Install dependencies and package Lambda
+      - name: Instalar dependencias y empaquetar
         run: |
-          cd lambdas/${{ matrix.lambda }}
+          cd lambdas/authorizer
           pip install -r requirements.txt -t ./package --quiet
           cp handler.py ./package/
           cd package && zip -r ../function.zip . -q
-          cd ..
+          echo "📦 $(du -sh ../function.zip | cut -f1)"
 
-      - name: Deploy to AWS Lambda
+      - name: Desplegar código
         run: |
           aws lambda update-function-code \
-            --function-name telemedicina-${{ matrix.lambda }} \
-            --zip-file fileb://lambdas/${{ matrix.lambda }}/function.zip \
-            --region ${{ secrets.AWS_REGION }}
+            --function-name zignum-authorizer \
+            --zip-file fileb://lambdas/authorizer/function.zip
+          aws lambda wait function-updated \
+            --function-name zignum-authorizer
+
+      - name: Inyectar variables de entorno
+        run: |
+          aws lambda update-function-configuration \
+            --function-name zignum-authorizer \
+            --environment "Variables={
+              COGNITO_DOCTORS_POOL_ID=${{ secrets.COGNITO_DOCTORS_POOL_ID }},
+              COGNITO_PATIENTS_POOL_ID=${{ secrets.COGNITO_PATIENTS_POOL_ID }},
+              COGNITO_REGION=${{ secrets.AWS_REGION }}
+            }"
+          aws lambda wait function-updated \
+            --function-name zignum-authorizer
+          echo "✅ zignum-authorizer desplegada"
+
+  # ──────────────────────────────────────────────────────────────
+  # Docs — genera presigned URLs. Necesita RDS (validar ownership),
+  # S3 y KMS.
+  # ──────────────────────────────────────────────────────────────
+  deploy-docs:
+    name: Deploy → zignum-docs
+    needs: detect-changes
+    if: needs.detect-changes.outputs.docs == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Configurar credenciales AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ secrets.AWS_REGION }}
+
+      - name: Configurar Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: lambdas/docs/requirements.txt
+
+      - name: Instalar dependencias y empaquetar
+        run: |
+          cd lambdas/docs
+          pip install -r requirements.txt -t ./package --quiet
+          cp handler.py ./package/
+          cd package && zip -r ../function.zip . -q
+          echo "📦 $(du -sh ../function.zip | cut -f1)"
+
+      - name: Desplegar código
+        run: |
+          aws lambda update-function-code \
+            --function-name zignum-docs \
+            --zip-file fileb://lambdas/docs/function.zip
+          aws lambda wait function-updated \
+            --function-name zignum-docs
+
+      - name: Inyectar variables de entorno
+        # DB_PASSWORD viene de GitHub Secrets — cifrado en reposo por GitHub,
+        # nunca aparece en logs ni en el código del repositorio.
+        run: |
+          aws lambda update-function-configuration \
+            --function-name zignum-docs \
+            --environment "Variables={
+              DB_HOST=${{ secrets.DB_HOST }},
+              DB_NAME=${{ secrets.DB_NAME }},
+              DB_USER=${{ secrets.DB_USER }},
+              DB_PASSWORD=${{ secrets.DB_PASSWORD }},
+              DB_PORT=3306,
+              DOCS_BUCKET=${{ secrets.DOCS_BUCKET }},
+              KMS_KEY_ARN=${{ secrets.KMS_KEY_ARN }},
+              AWS_DEPLOY_REGION=${{ secrets.AWS_REGION }}
+            }"
+          aws lambda wait function-updated \
+            --function-name zignum-docs
+          echo "✅ zignum-docs desplegada"
+
+  # ──────────────────────────────────────────────────────────────
+  # Records — CRUD de expedientes en RDS.
+  # ──────────────────────────────────────────────────────────────
+  deploy-records:
+    name: Deploy → zignum-records
+    needs: detect-changes
+    if: needs.detect-changes.outputs.records == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Configurar credenciales AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ secrets.AWS_REGION }}
+
+      - name: Configurar Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: lambdas/records/requirements.txt
+
+      - name: Instalar dependencias y empaquetar
+        run: |
+          cd lambdas/records
+          pip install -r requirements.txt -t ./package --quiet
+          cp handler.py ./package/
+          cd package && zip -r ../function.zip . -q
+          echo "📦 $(du -sh ../function.zip | cut -f1)"
+
+      - name: Desplegar código
+        run: |
+          aws lambda update-function-code \
+            --function-name zignum-records \
+            --zip-file fileb://lambdas/records/function.zip
+          aws lambda wait function-updated \
+            --function-name zignum-records
+
+      - name: Inyectar variables de entorno
+        run: |
+          aws lambda update-function-configuration \
+            --function-name zignum-records \
+            --environment "Variables={
+              DB_HOST=${{ secrets.DB_HOST }},
+              DB_NAME=${{ secrets.DB_NAME }},
+              DB_USER=${{ secrets.DB_USER }},
+              DB_PASSWORD=${{ secrets.DB_PASSWORD }},
+              DB_PORT=3306,
+              AWS_DEPLOY_REGION=${{ secrets.AWS_REGION }}
+            }"
+          aws lambda wait function-updated \
+            --function-name zignum-records
+          echo "✅ zignum-records desplegada"
+
+  # ──────────────────────────────────────────────────────────────
+  # Pre Token Doctors — Cognito trigger. Consulta RDS para verificar
+  # si el médico tiene la licencia activa y lo inyecta al JWT.
+  # ──────────────────────────────────────────────────────────────
+  deploy-pre-token-doctors:
+    name: Deploy → zignum-pre-token-doctors
+    needs: detect-changes
+    if: needs.detect-changes.outputs.pre-token-doctors == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Configurar credenciales AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ secrets.AWS_REGION }}
+
+      - name: Configurar Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: lambdas/pre-token-doctors/requirements.txt
+
+      - name: Instalar dependencias y empaquetar
+        run: |
+          cd lambdas/pre-token-doctors
+          pip install -r requirements.txt -t ./package --quiet
+          cp handler.py ./package/
+          cd package && zip -r ../function.zip . -q
+          echo "📦 $(du -sh ../function.zip | cut -f1)"
+
+      - name: Desplegar código
+        run: |
+          aws lambda update-function-code \
+            --function-name zignum-pre-token-doctors \
+            --zip-file fileb://lambdas/pre-token-doctors/function.zip
+          aws lambda wait function-updated \
+            --function-name zignum-pre-token-doctors
+
+      - name: Inyectar variables de entorno
+        run: |
+          aws lambda update-function-configuration \
+            --function-name zignum-pre-token-doctors \
+            --environment "Variables={
+              DB_HOST=${{ secrets.DB_HOST }},
+              DB_NAME=${{ secrets.DB_NAME }},
+              DB_USER=${{ secrets.DB_USER }},
+              DB_PASSWORD=${{ secrets.DB_PASSWORD }},
+              DB_PORT=3306
+            }"
+          aws lambda wait function-updated \
+            --function-name zignum-pre-token-doctors
+          echo "✅ zignum-pre-token-doctors desplegada"
+
+  # ──────────────────────────────────────────────────────────────
+  # Pre Token Patients — Cognito trigger. Enriquece el JWT del paciente
+  # con datos de RDS antes de que Cognito lo firme.
+  # ──────────────────────────────────────────────────────────────
+  deploy-pre-token-patients:
+    name: Deploy → zignum-pre-token-patients
+    needs: detect-changes
+    if: needs.detect-changes.outputs.pre-token-patients == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Configurar credenciales AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ secrets.AWS_REGION }}
+
+      - name: Configurar Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: lambdas/pre-token-patients/requirements.txt
+
+      - name: Instalar dependencias y empaquetar
+        run: |
+          cd lambdas/pre-token-patients
+          pip install -r requirements.txt -t ./package --quiet
+          cp handler.py ./package/
+          cd package && zip -r ../function.zip . -q
+          echo "📦 $(du -sh ../function.zip | cut -f1)"
+
+      - name: Desplegar código
+        run: |
+          aws lambda update-function-code \
+            --function-name zignum-pre-token-patients \
+            --zip-file fileb://lambdas/pre-token-patients/function.zip
+          aws lambda wait function-updated \
+            --function-name zignum-pre-token-patients
+
+      - name: Inyectar variables de entorno
+        run: |
+          aws lambda update-function-configuration \
+            --function-name zignum-pre-token-patients \
+            --environment "Variables={
+              DB_HOST=${{ secrets.DB_HOST }},
+              DB_NAME=${{ secrets.DB_NAME }},
+              DB_USER=${{ secrets.DB_USER }},
+              DB_PASSWORD=${{ secrets.DB_PASSWORD }},
+              DB_PORT=3306
+            }"
+          aws lambda wait function-updated \
+            --function-name zignum-pre-token-patients
+          echo "✅ zignum-pre-token-patients desplegada"
+
+  # ──────────────────────────────────────────────────────────────
+  # Resumen — corre siempre, incluso si algún job falló
+  # ──────────────────────────────────────────────────────────────
+  summary:
+    name: Resumen del deploy
+    runs-on: ubuntu-latest
+    needs:
+      - deploy-authorizer
+      - deploy-docs
+      - deploy-records
+      - deploy-pre-token-doctors
+      - deploy-pre-token-patients
+    if: always()
+
+    steps:
+      - name: Escribir resumen en Actions
+        run: |
+          echo "## 🚀 Zignum — Deploy completado" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Lambda | Resultado |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-----------|" >> $GITHUB_STEP_SUMMARY
+          echo "| zignum-authorizer | ${{ needs.deploy-authorizer.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| zignum-docs | ${{ needs.deploy-docs.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| zignum-records | ${{ needs.deploy-records.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| zignum-pre-token-doctors | ${{ needs.deploy-pre-token-doctors.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| zignum-pre-token-patients | ${{ needs.deploy-pre-token-patients.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "> Credenciales RDS inyectadas desde GitHub Secrets — sin AWS Secrets Manager (Free Tier)." >> $GITHUB_STEP_SUMMARY
