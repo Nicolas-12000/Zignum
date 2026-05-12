@@ -38,7 +38,7 @@ jobs:
 
       - name: Instalar dependencias del frontend
         working-directory: frontend
-        run: npm ci --silent
+        run: npm ci
 
       - name: Crear archivo de configuracion con variables de entorno
         run: |
