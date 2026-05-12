@@ -46,6 +46,13 @@ jobs:
           VITE_AWS_REGION=${{ secrets.AWS_REGION }}
           EOF
 
+      - name: Validar variables de entorno del frontend
+        run: |
+          if [[ -z "${{ secrets.API_GATEWAY_URL }}" ]]; then
+            echo "ERROR: API_GATEWAY_URL esta vacio. Configura el secret en GitHub Actions."
+            exit 1
+          fi
+
       - name: Build del frontend
         run: |
           cd frontend
