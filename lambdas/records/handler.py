@@ -43,9 +43,7 @@ def lambda_handler(event, context):
     cursor = conn.cursor(cursor_factory=RealDictCursor)
 
     try:
-
         if role == "doctor":
-
             base_query = """
             SELECT
                 d.id AS document_id,
@@ -85,7 +83,6 @@ def lambda_handler(event, context):
             params = [sub, sub]
 
         elif role == "patient":
-
             base_query = """
             SELECT
                 d.id AS document_id,
@@ -130,7 +127,6 @@ def lambda_handler(event, context):
         query += " ORDER BY docs.uploaded_at DESC"
 
         cursor.execute(query, params)
-
         rows = cursor.fetchall()
 
         request_context = event.get("requestContext", {})
@@ -143,6 +139,13 @@ def lambda_handler(event, context):
         return {
             "statusCode": 200,
             "body": json.dumps(rows, default=str)
+        }
+
+    except Exception as e:
+        print(f"Error in records lambda: {str(e)}")
+        return {
+            "statusCode": 500,
+            "body": json.dumps({"message": "Internal server error", "details": str(e)})
         }
 
     finally:

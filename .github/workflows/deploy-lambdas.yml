@@ -97,7 +97,7 @@ jobs:
         run: |
           cd lambdas/authorizer
           pip install -r requirements.txt -t ./package --quiet
-          cp handler.py ./package/
+          cp *.py ./package/
           cd package && zip -r ../function.zip . -q
           echo "📦 $(du -sh ../function.zip | cut -f1)"
 
@@ -113,6 +113,7 @@ jobs:
         run: |
           aws lambda update-function-configuration \
             --function-name zignum-authorizer \
+            --handler handler.lambda_handler \
             --environment "Variables={
               COGNITO_DOCTORS_POOL_ID=${{ secrets.COGNITO_DOCTORS_POOL_ID }},
               COGNITO_PATIENTS_POOL_ID=${{ secrets.COGNITO_PATIENTS_POOL_ID }},
@@ -154,7 +155,7 @@ jobs:
         run: |
           cd lambdas/docs
           pip install -r requirements.txt -t ./package --quiet
-          cp handler.py ./package/
+          cp *.py ./package/
           cd package && zip -r ../function.zip . -q
           echo "📦 $(du -sh ../function.zip | cut -f1)"
 
@@ -172,6 +173,7 @@ jobs:
         run: |
           aws lambda update-function-configuration \
             --function-name zignum-docs \
+            --handler handler.lambda_handler \
             --environment "Variables={
               DB_HOST=${{ secrets.DB_HOST }},
               DB_NAME=${{ secrets.DB_NAME }},
@@ -216,7 +218,7 @@ jobs:
         run: |
           cd lambdas/records
           pip install -r requirements.txt -t ./package --quiet
-          cp handler.py ./package/
+          cp *.py ./package/
           cd package && zip -r ../function.zip . -q
           echo "📦 $(du -sh ../function.zip | cut -f1)"
 
@@ -232,6 +234,7 @@ jobs:
         run: |
           aws lambda update-function-configuration \
             --function-name zignum-records \
+            --handler handler.lambda_handler \
             --environment "Variables={
               DB_HOST=${{ secrets.DB_HOST }},
               DB_NAME=${{ secrets.DB_NAME }},
@@ -275,7 +278,7 @@ jobs:
         run: |
           cd lambdas/pre-token-doctors
           pip install -r requirements.txt -t ./package --quiet
-          cp handler.py ./package/
+          cp *.py ./package/
           cd package && zip -r ../function.zip . -q
           echo "📦 $(du -sh ../function.zip | cut -f1)"
 
@@ -291,6 +294,7 @@ jobs:
         run: |
           aws lambda update-function-configuration \
             --function-name zignum-pre-token-doctors \
+            --handler handler.lambda_handler \
             --environment "Variables={
               DB_HOST=${{ secrets.DB_HOST }},
               DB_NAME=${{ secrets.DB_NAME }},
@@ -334,7 +338,7 @@ jobs:
         run: |
           cd lambdas/pre-token-patients
           pip install -r requirements.txt -t ./package --quiet
-          cp handler.py ./package/
+          cp *.py ./package/
           cd package && zip -r ../function.zip . -q
           echo "📦 $(du -sh ../function.zip | cut -f1)"
 
@@ -350,6 +354,7 @@ jobs:
         run: |
           aws lambda update-function-configuration \
             --function-name zignum-pre-token-patients \
+            --handler handler.lambda_handler \
             --environment "Variables={
               DB_HOST=${{ secrets.DB_HOST }},
               DB_NAME=${{ secrets.DB_NAME }},

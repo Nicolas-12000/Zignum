@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { FileText, Download, UploadCloud, Search, Shield, Clock, X, Image, FileBarChart, TestTube2 } from 'lucide-react';
 import MockBanner from '../components/MockBanner';
@@ -57,7 +57,7 @@ const Documents = () => {
     return `${size.toFixed(size >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
   };
 
-  const getAuthHeaders = () => {
+  const getAuthHeaders = useCallback(() => {
     const headers = {
       'Content-Type': 'application/json'
     };
@@ -65,9 +65,9 @@ const Documents = () => {
       headers.Authorization = `Bearer ${user.token}`;
     }
     return headers;
-  };
+  }, [user]);
 
-  const fetchDocuments = async () => {
+  const fetchDocuments = useCallback(async () => {
     if (!apiBase) return;
 
     setIsLoading(true);
@@ -91,6 +91,12 @@ const Documents = () => {
       }
 
       const data = await response.json();
+      
+      if (!Array.isArray(data)) {
+        console.error('Expected array from /records, got:', data);
+        throw new Error('El servidor no devolvió una lista de documentos válida.');
+      }
+
       const normalized = data.map((item) => ({
         id: item.document_id,
         name: item.file_name,
@@ -110,11 +116,13 @@ const Documents = () => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [apiBase, activeFilter, dateFrom, dateTo, getAuthHeaders]);
 
   useEffect(() => {
-    fetchDocuments();
-  }, [apiBase, activeFilter, dateFrom, dateTo]);
+    (async () => {
+      await fetchDocuments();
+    })();
+  }, [fetchDocuments]);
 
   const handleDownload = async (documentId) => {
     if (!apiBase) return;
