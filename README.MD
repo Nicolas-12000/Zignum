@@ -3,7 +3,7 @@
 ![Deploy Lambdas](https://github.com/tu-usuario/zignum/actions/workflows/deploy-lambdas.yml/badge.svg)
 ![PR Checks](https://github.com/tu-usuario/zignum/actions/workflows/pr-checks.yml/badge.svg)
 ![AWS](https://img.shields.io/badge/AWS-Serverless-FF9900?logo=amazonaws&logoColor=white)
-![Python](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3.14-3776AB?logo=python&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-6B7280)
 
 Plataforma de telemedicina serverless con videoconferencia y gestión de expedientes clínicos. Construida sobre AWS con aislamiento de red completo, cifrado en tránsito y reposo, y control de acceso basado en roles a nivel de token JWT.
@@ -19,7 +19,7 @@ Nota: los despliegues de Lambda en main se ejecutan via GitHub Actions.
 | Frontend | React + Vite (SPA) alojado en S3 |
 | Auth | AWS Cognito (2 User Pools independientes) + Lambda Authorizer |
 | API | API Gateway REST + JWT custom claims |
-| Cómputo | AWS Lambda — Python 3.11 |
+| Cómputo | AWS Lambda — Python 3.14 |
 | Base de datos | RDS PostgreSQL en subred privada (VPC) |
 | Almacenamiento | S3 con SSE-KMS (CMK gestionada por el cliente) |
 | CDN | CloudFront con dos cache behaviors diferenciados |
@@ -142,7 +142,7 @@ zignum/
 ### Requisitos
 
 - AWS CLI v2 configurado con un usuario IAM (no root)
-- Python 3.11
+- Python 3.14
 - Node.js 20+ (Requerido para compilar Vite/React)
 - Cuenta AWS con Free Tier activo
 
@@ -243,7 +243,7 @@ push a main con cambios en lambdas/docs/
 Los checks del PR bloquean el merge si:
 - Hay errores de sintaxis o estilo (flake8, max-line-length 100)
 - Falta `handler.py` o `requirements.txt` en alguna Lambda
-- Las dependencias no son instalables en Python 3.11
+- Las dependencias no son instalables en Python 3.14
 - Se detectan patrones de Access Keys o passwords hardcodeados en el código
 
 ### Gestión del entorno (Free Tier)
