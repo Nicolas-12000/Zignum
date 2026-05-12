@@ -126,7 +126,7 @@ jobs:
   # S3 y KMS.
   # ──────────────────────────────────────────────────────────────
   deploy-docs:
-    name: Deploy → zignum-docs
+    name: Deploy → zignum-docs # force redeploy marker
     needs: detect-changes
     if: needs.detect-changes.outputs.docs == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
@@ -188,7 +188,7 @@ jobs:
   # Records — CRUD de expedientes en RDS.
   # ──────────────────────────────────────────────────────────────
   deploy-records:
-    name: Deploy → zignum-records
+    name: Deploy → zignum-records # force redeploy marker
     needs: detect-changes
     if: needs.detect-changes.outputs.records == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
