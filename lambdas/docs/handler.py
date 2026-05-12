@@ -10,6 +10,8 @@ BUCKET = os.environ["DOCS_BUCKET"]
 
 def lambda_handler(event, context):
 
+    # Deploy marker: keep to force Lambda update when needed.
+
     role = event["requestContext"]["authorizer"]["role"]
 
     if role not in ["doctor", "patient"]:
