@@ -153,7 +153,8 @@ const Documents = () => {
     try {
       const payload = {
         file_name: selectedFile.name,
-        doc_type: selectedType
+        doc_type: selectedType,
+        content_type: selectedFile.type || 'application/octet-stream'
       };
 
       if (user?.role === 'doctor') {

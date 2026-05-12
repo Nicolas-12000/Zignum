@@ -63,6 +63,7 @@ const Register = () => {
 
     userPool.signUp(formData.email, formData.password, attributes, null, (err, result) => {
       if (err) {
+        console.error('Cognito SignUp Error:', err);
         setError(err.message || 'No se pudo registrar.');
         setIsLoading(false);
         return;

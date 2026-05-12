@@ -1,5 +1,11 @@
 // Application configuration
 
+console.log('Vite Env Check:', {
+  apiUrl: import.meta.env.VITE_API_URL,
+  doctorsPool: import.meta.env.VITE_COGNITO_DOCTORS_POOL_ID,
+  patientsPool: import.meta.env.VITE_COGNITO_PATIENTS_POOL_ID
+});
+
 export const config = {
   apiUrl: import.meta.env.VITE_API_URL || '',
   awsRegion: import.meta.env.VITE_AWS_REGION || 'us-east-1',

@@ -47,6 +47,7 @@ const Login = () => {
         setIsLoading(false);
       },
       onFailure: (err) => {
+        console.error('Cognito Login Error:', err);
         setError(err?.message || 'No se pudo iniciar sesion.');
         setIsLoading(false);
       },
