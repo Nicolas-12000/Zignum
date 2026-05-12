@@ -1,5 +1,4 @@
 def lambda_handler(event, context):
-    print("Event received:", event)
 
     claims = {
         "custom:role": "patient"
