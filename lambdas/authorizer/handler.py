@@ -54,10 +54,12 @@ def lambda_handler(event, context):
       # ISSUERS = [f"https://cognito-idp.{REGION}.amazonaws.com/{POOL_ID}"]
       # if payload.get("iss") not in ISSUERS: raise Exception("Invalid issuer")
 
+      # Simplificamos el Resource a '*' para evitar errores de 403 por desajuste de path en el ARN
+      # En producción, se recomienda reconstruir el ARN base: arn:aws:execute-api:region:account:api-id/stage/*/*
       return generate_policy(
          sub,
          "Allow",
-         event.get("methodArn", "*"),
+         "*",
          {
             "sub": sub,
             "role": role

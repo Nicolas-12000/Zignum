@@ -10,7 +10,7 @@ on:
 
 env:
   AWS_REGION: ${{ secrets.AWS_REGION }}
-  PYTHON_VERSION: '3.14'
+  PYTHON_VERSION: '3.12'
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Gestión de credenciales RDS — 100% Free Tier
@@ -154,7 +154,7 @@ jobs:
       - name: Instalar dependencias y empaquetar
         run: |
           cd lambdas/docs
-          pip install -r requirements.txt -t ./package --quiet
+          pip install --only-binary=:all: --platform manylinux2014_x86_64 --implementation py --target ./package -r requirements.txt --quiet
           cp *.py ./package/
           cd package && zip -r ../function.zip . -q
           echo "📦 $(du -sh ../function.zip | cut -f1)"
@@ -217,7 +217,7 @@ jobs:
       - name: Instalar dependencias y empaquetar
         run: |
           cd lambdas/records
-          pip install -r requirements.txt -t ./package --quiet
+          pip install --only-binary=:all: --platform manylinux2014_x86_64 --implementation py --target ./package -r requirements.txt --quiet
           cp *.py ./package/
           cd package && zip -r ../function.zip . -q
           echo "📦 $(du -sh ../function.zip | cut -f1)"
